@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>액티브넛지 — 자세 넛지 프로토타입</title>
+<style>
+  :root {
+    --bg: #10151c;
+    --panel: #171f29;
+    --line: #2a3542;
+    --accent: #5ee7c5;
+    --warn: #ff8a5c;
+    --danger: #ff5c5c;
+    --text: #e8edf2;
+    --muted: #8b98a5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 60px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .layout {
+    display: flex;
+    gap: 20px;
+    width: 100%;
+    max-width: 1280px;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: flex-start;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px;
+  }
+  .video-wrap { position: relative; width: 480px; max-width: 100%; }
+  video, canvas {
+    width: 100%;
+    border-radius: 10px;
+    display: block;
+    background: #000;
+    transform: scaleX(-1);
+  }
+  canvas.overlay { position: absolute; top: 0; left: 0; background: transparent; }
+  .panel { width: 320px; max-width: 100%; display: flex; flex-direction: column; gap: 14px; }
+  button {
+    background: var(--accent);
+    color: #06231b;
+    border: none;
+    border-radius: 999px;
+    padding: 10px 18px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button.secondary {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--text);
+  }
+  button:disabled { opacity: 0.55; cursor: not-allowed; }
+  button.secondary:disabled { border-color: var(--muted); color: var(--muted); }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .metric { display: flex; justify-content: space-between; font-size: 13px; margin: 6px 0; }
+  .metric b { font-variant-numeric: tabular-nums; }
+  .status {
+    font-size: 13px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: #0d1319;
+    border: 1px solid var(--line);
+  }
+  .status.good { border-color: var(--accent); color: var(--accent); }
+  .status.bad { border-color: var(--danger); color: var(--danger); }
+  .barTrack {
+    height: 8px;
+    background: #0d1319;
+    border-radius: 99px;
+    overflow: hidden;
+    margin-top: 6px;
+  }
+  .barFill { height: 100%; background: var(--warn); width: 0%; transition: width .2s linear; }
+
+  .forecast-card { width: 300px; max-width: 100%; display: flex; flex-direction: column; gap: 10px; }
+  .forecast-header { display: flex; justify-content: space-between; align-items: baseline; }
+  .forecast-header h3 { margin: 0; font-size: 14px; }
+  .forecast-timer { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .forecast-figures {
+    display: flex;
+    gap: 10px;
+    background: #0d1319;
+    border-radius: 10px;
+    padding: 10px 6px 4px;
+  }
+  .forecast-fig { flex: 1; text-align: center; }
+  .forecast-fig svg { width: 100%; height: 150px; }
+  .forecast-fig .label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .figure-body { transform-origin: 100px 150px; transition: transform 0.5s ease; }
+  .severity-badge {
+    display: inline-block;
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 99px;
+    background: #0d1319;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    align-self: flex-start;
+  }
+  .severity-badge.low { color: var(--accent); border-color: var(--accent); }
+  .severity-badge.mid { color: var(--warn); border-color: var(--warn); }
+  .severity-badge.high { color: var(--danger); border-color: var(--danger); }
+  .disclaimer { font-size: 11px; color: #5a6672; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <h1>액티브넛지 프로토타입</h1>
+  <div class="sub">웹캠으로 어깨 각도 · 목(귀) 각도를 비교해 자세를 측정하고, 1분마다 예상 모습을 갱신합니다</div>
+
+  <div class="layout">
+    <div class="card video-wrap">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="overlay" class="overlay"></canvas>
+    </div>
+
+    <div class="card panel">
+      <div>
+        <button id="startBtn">웹캠 시작</button>
+        <button id="calBtn" class="secondary" disabled>바른 자세로 캘리브레이션 (10초)</button>
+        <div class="hint" id="calHint">※ 웹캠 시작 후 활성화됩니다</div>
+      </div>
+
+      <div id="statusBox" class="status">웹캠을 시작하면 자세 측정이 준비됩니다.</div>
+
+      <div>
+        <div class="metric"><span>어깨 기울기</span><b id="shoulderVal">–</b></div>
+        <div class="metric"><span>목(귀) 각도</span><b id="neckVal">–</b></div>
+      </div>
+
+      <div>
+        <div class="metric"><span>나쁜 자세 누적 점수</span><b id="badTimeVal">0</b></div>
+        <div class="barTrack"><div class="barFill" id="badBar"></div></div>
+      </div>
+
+      <div style="font-size:12px; color:var(--muted); line-height:1.5;">
+        캘리브레이션 후 자세가 기준보다 나빠지면 오른쪽 "예상 모습" 패널이 1분마다 자동으로 갱신됩니다.
+      </div>
+    </div>
+
+    <div class="card forecast-card">
+      <div class="forecast-header">
+        <h3>이대로 계속하면?</h3>
+        <span class="forecast-timer" id="forecastTimer">다음 갱신 60초 후</span>
+      </div>
+      <span class="severity-badge low" id="severityBadge">누적 점수 낮음</span>
+      <div class="forecast-figures">
+        <div class="forecast-fig">
+          <svg viewBox="0 0 200 200">
+            <g class="figure-body" id="figureNow">
+              <line x1="100" y1="150" x2="100" y2="180" stroke="#8b98a5" stroke-width="6" stroke-linecap="round"/>
+              <line x1="100" y1="150" x2="90" y2="70" stroke="#5ee7c5" stroke-width="8" stroke-linecap="round" id="spineNow"/>
+              <circle cx="88" cy="55" r="16" fill="#5ee7c5" id="headNow"/>
+            </g>
+          </svg>
+          <div class="label">지금</div>
+        </div>
+        <div class="forecast-fig">
+          <svg viewBox="0 0 200 200">
+            <g class="figure-body" id="figureFuture">
+              <line x1="100" y1="150" x2="100" y2="180" stroke="#8b98a5" stroke-width="6" stroke-linecap="round"/>
+              <line x1="100" y1="150" x2="90" y2="70" stroke="#ff8a5c" stroke-width="8" stroke-linecap="round" id="spineFuture"/>
+              <circle cx="88" cy="55" r="16" fill="#ff8a5c" id="headFuture"/>
+            </g>
+          </svg>
+          <div class="label" id="futureLabel">1주일 후 (예상)</div>
+        </div>
+      </div>
+      <div class="disclaimer">
+        * 실제 척추 변형을 예측하는 것이 아니라, 현재 누적된 자세 패턴이 유지될 경우 일반적으로 보고되는 경향을 가정해 보여주는 시각화입니다. 의학적 진단이 아닙니다.
+      </div>
+    </div>
+  </div>
+
+<script type="module">
+import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const video = document.getElementById("video");
+const overlay = document.getElementById("overlay");
+const ctx = overlay.getContext("2d");
+const startBtn = document.getElementById("startBtn");
+const calBtn = document.getElementById("calBtn");
+const calHint = document.getElementById("calHint");
+const statusBox = document.getElementById("statusBox");
+const shoulderVal = document.getElementById("shoulderVal");
+const neckVal = document.getElementById("neckVal");
+const badTimeVal = document.getElementById("badTimeVal");
+const badBar = document.getElementById("badBar");
+
+const forecastTimer = document.getElementById("forecastTimer");
+const severityBadge = document.getElementById("severityBadge");
+const futureLabel = document.getElementById("futureLabel");
+const spineNow = document.getElementById("spineNow");
+const headNow = document.getElementById("headNow");
+const spineFuture = document.getElementById("spineFuture");
+const headFuture = document.getElementById("headFuture");
+
+let poseLandmarker = null;
+let running = false;
+let calibrating = false;
+let baseline = null;
+let calSamples = [];
+
+let badScore = 0;
+let lastFrameTime = performance.now();
+const BAD_THRESHOLD_DEG = 12;
+const SCORE_MAX_FOR_SEVERITY = 120;
+
+const FORECAST_INTERVAL_MS = 60000;
+let forecastRemainingMs = FORECAST_INTERVAL_MS;
+
+function angleOfLine(dx, dy) {
+  return Math.atan2(dy, dx) * (180 / Math.PI);
+}
+
+function computeMetrics(landmarks) {
+  const lS = landmarks[11], rS = landmarks[12];
+  const lE = landmarks[7], rE = landmarks[8];
+  const shoulderAngle = angleOfLine(rS.x - lS.x, rS.y - lS.y);
+  const shoulderMid = { x: (lS.x + rS.x) / 2, y: (lS.y + rS.y) / 2 };
+  const earMid = { x: (lE.x + rE.x) / 2, y: (lE.y + rE.y) / 2 };
+  const dx = earMid.x - shoulderMid.x;
+  const dy = earMid.y - shoulderMid.y;
+  const neckAngle = angleOfLine(dx, dy) + 90;
+  return { shoulderAngle, neckAngle };
+}
+
+async function setup() {
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+  poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath:
+        "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+      delegate: "GPU",
+    },
+    runningMode: "VIDEO",
+    numPoses: 1,
+  });
+}
+
+startBtn.addEventListener("click", async () => {
+  startBtn.disabled = true;
+  statusBox.textContent = "카메라 권한을 요청하는 중...";
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+    video.srcObject = stream;
+    await video.play();
+    overlay.width = video.videoWidth || 640;
+    overlay.height = video.videoHeight || 480;
+    statusBox.textContent = "모델 로딩 중...";
+    await setup();
+    running = true;
+    calBtn.disabled = false;
+    calHint.style.display = "none";
+    statusBox.textContent = "먼저 '바른 자세로 캘리브레이션'을 눌러 기준값을 잡아주세요.";
+    lastFrameTime = performance.now();
+    requestAnimationFrame(loop);
+    setInterval(forecastTick, 1000);
+  } catch (err) {
+    statusBox.textContent = "카메라 접근 실패: " + err.message + " (파일을 로컬 서버로 열어보세요)";
+    startBtn.disabled = false;
+  }
+});
+
+const CALIBRATION_MS = 10000;
+
+calBtn.addEventListener("click", () => {
+  calibrating = true;
+  calSamples = [];
+  calBtn.disabled = true;
+
+  let remaining = Math.ceil(CALIBRATION_MS / 1000);
+  statusBox.textContent = `바른 자세를 ${remaining}초간 유지하세요...`;
+  const countdown = setInterval(() => {
+    remaining -= 1;
+    if (remaining > 0) {
+      statusBox.textContent = `바른 자세를 ${remaining}초간 유지하세요...`;
+    }
+  }, 1000);
+
+  setTimeout(() => {
+    clearInterval(countdown);
+    if (calSamples.length > 0) {
+      const avg = (arr, key) => arr.reduce((s, v) => s + v[key], 0) / arr.length;
+      baseline = {
+        shoulder: avg(calSamples, "shoulderAngle"),
+        neck: avg(calSamples, "neckAngle"),
+      };
+      statusBox.textContent = "캘리브레이션 완료! 이제 평소처럼 앉아있으면 됩니다.";
+      statusBox.className = "status good";
+    } else {
+      statusBox.textContent = "포즈를 인식하지 못했어요. 다시 시도해주세요.";
+    }
+    calibrating = false;
+    calBtn.disabled = false;
+  }, CALIBRATION_MS);
+});
+
+function updateBadUI() {
+  badTimeVal.textContent = Math.round(badScore);
+  const pct = Math.min(100, (badScore / SCORE_MAX_FOR_SEVERITY) * 100);
+  badBar.style.width = pct + "%";
+}
+
+function renderForecast() {
+  const severity = Math.min(1, badScore / SCORE_MAX_FOR_SEVERITY);
+
+  const nowSeverity = severity * 0.4;
+  applyPose(spineNow, headNow, nowSeverity);
+
+  const futureSeverity = Math.min(1, severity * 1.6);
+  applyPose(spineFuture, headFuture, futureSeverity);
+
+  if (severity < 0.34) {
+    severityBadge.textContent = "누적 점수 낮음";
+    severityBadge.className = "severity-badge low";
+    futureLabel.textContent = "1주일 후 (양호 유지 시)";
+  } else if (severity < 0.7) {
+    severityBadge.textContent = "누적 점수 중간";
+    severityBadge.className = "severity-badge mid";
+    futureLabel.textContent = "1주일 후 (예상)";
+  } else {
+    severityBadge.textContent = "누적 점수 높음";
+    severityBadge.className = "severity-badge high";
+    futureLabel.textContent = "1주일 후 (예상, 주의 필요)";
+  }
+}
+
+function applyPose(spineEl, headEl, severity) {
+  const baseX = 90, baseY = 70, headBaseX = 88, headBaseY = 55;
+  const x = baseX - severity * 25;
+  const y = baseY + severity * 30;
+  spineEl.setAttribute("x2", x);
+  spineEl.setAttribute("y2", y);
+  headEl.setAttribute("cx", headBaseX - severity * 25);
+  headEl.setAttribute("cy", headBaseY + severity * 30);
+}
+
+function forecastTick() {
+  if (!baseline) return;
+  forecastRemainingMs -= 1000;
+  if (forecastRemainingMs <= 0) {
+    renderForecast();
+    forecastRemainingMs = FORECAST_INTERVAL_MS;
+  }
+  forecastTimer.textContent = `다음 갱신 ${Math.ceil(forecastRemainingMs / 1000)}초 후`;
+}
+
+function loop() {
+  if (!running) return;
+  const now = performance.now();
+  const dt = (now - lastFrameTime) / 1000;
+  lastFrameTime = now;
+
+  const result = poseLandmarker.detectForVideo(video, now);
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+  if (result.landmarks && result.landmarks.length > 0) {
+    const lm = result.landmarks[0];
+    const { shoulderAngle, neckAngle } = computeMetrics(lm);
+
+    const px = (p) => p.x * overlay.width;
+    const py = (p) => p.y * overlay.height;
+    const lS = lm[11], rS = lm[12], lE = lm[7], rE = lm[8];
+    const shoulderMid = { x: (px(lS) + px(rS)) / 2, y: (py(lS) + py(rS)) / 2 };
+    const earMid = { x: (px(lE) + px(rE)) / 2, y: (py(lE) + py(rE)) / 2 };
+
+    ctx.strokeStyle = "#5ee7c5";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(px(lS), py(lS));
+    ctx.lineTo(px(rS), py(rS));
+    ctx.stroke();
+
+    ctx.strokeStyle = "#ff8a5c";
+    ctx.beginPath();
+    ctx.moveTo(shoulderMid.x, shoulderMid.y);
+    ctx.lineTo(earMid.x, earMid.y);
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.3)";
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(shoulderMid.x, shoulderMid.y);
+    ctx.lineTo(shoulderMid.x, shoulderMid.y - 100);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = "#5ee7c5";
+    [lS, rS, lE, rE].forEach((p) => {
+      ctx.beginPath();
+      ctx.arc(px(p), py(p), 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#0d1319";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+
+    shoulderVal.textContent = shoulderAngle.toFixed(1) + "°";
+    neckVal.textContent = neckAngle.toFixed(1) + "°";
+
+    if (calibrating) {
+      calSamples.push({ shoulderAngle, neckAngle });
+    } else if (baseline) {
+      const neckDeviation = Math.abs(neckAngle - baseline.neck);
+      const isBad = neckDeviation > BAD_THRESHOLD_DEG;
+      if (isBad) {
+        badScore += dt * 2;
+        statusBox.textContent = `자세 흐트러짐 감지 (기준 대비 ${neckDeviation.toFixed(1)}° 차이)`;
+        statusBox.className = "status bad";
+      } else {
+        badScore = Math.max(0, badScore - dt * 1.2);
+        statusBox.textContent = "좋은 자세를 유지하고 있어요.";
+        statusBox.className = "status good";
+      }
+      updateBadUI();
+    }
+  }
+
+  requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
